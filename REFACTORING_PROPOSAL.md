@@ -96,6 +96,73 @@ fetch_news:   |------------- 抓取网页中（耗时较长） ------------> [�
 
 ---
 
+### 3.3 算子级 AbortSignal 使用规范与最佳实践
+
+在 DAG 运行过程中，很多算子内部包含网络请求、批处理或轮询任务。通过将框架注入的 `signal` 接入算子执行逻辑，可以在 DAG 超时或同图兄弟节点崩溃时，实现真正的“即时终止与释放”，避免无效消耗。
+
+#### 3.3.1 传递方式与来源（无需业务输入）
+`signal` **不需要**在算子的业务输入 `input_schema` 中定义。框架在执行节点调用 `op.exec(args)` 时，会自动将全局关联的 `AbortSignal` 注入至 `OperatorArgs.signal` 中。算子直接解构获取即可：
+```ts
+export default async function myExec({ inputs, requires, options, signal }: OperatorArgs): Promise<OperatorOutput> {
+    // signal 为可选参数，不关心中断的算子可直接忽略
+}
+```
+
+#### 3.3.2 触发中断的时机
+1. **执行超时**：DAG 设置了 `timeout` 且耗时超限，框架调用 `abort_controller.abort(timeout_err)`；
+2. **兄弟节点失败**：DAG 中任意节点抛出未捕获异常或校验失败，框架广播 `abort_controller.abort(err)`，立即通知其余正在执行的在途算子提早退出。
+
+#### 3.3.3 三种典型算子终止模式
+
+1. **模式一：直接转发给支持 signal 的底层异步 API（网络请求 / SDK）**
+   现代 Node.js 的 `fetch`、各类 HTTP 客户端、OpenAI / AI SDK、数据库查询等大多原生支持 `signal`。发生中断时底层会自动取消网络请求并抛出 `AbortError`。
+   ```ts
+   export default async function fetchNewsExec({ inputs, signal }: OperatorArgs): Promise<OperatorOutput> {
+       const url = inputs.url as string;
+       // 原生 fetch 传入 signal，中断时底层会自动关闭 socket 连接并抛出 AbortError
+       const response = await fetch(url, { signal });
+       const data = await response.json();
+       return { branch: "default", output: { items: data } };
+   }
+   ```
+
+2. **模式二：长耗时循环 / 批处理中主动检查并退出（防空转）**
+   对于大量数据的批处理或多步骤链式任务，在每次循环迭代开始前通过 `signal?.throwIfAborted()` 进行守卫检查：
+   ```ts
+   export default async function batchProcessExec({ inputs, signal }: OperatorArgs): Promise<OperatorOutput> {
+       const items = inputs.items as string[];
+       const results = [];
+       for (const item of items) {
+           // 检查中断：若图已超时或兄弟节点已崩溃，立即抛出 AbortError 停止后续循环
+           signal?.throwIfAborted();
+           results.push(await processItem(item));
+       }
+       return { branch: "default", output: { results } };
+   }
+   ```
+
+3. **模式三：监听 abort 事件清理非原生异步任务（Timer / 长连接 / 进程）**
+   对于自定义的异步 Promise、定时器或第三方未适配 signal 的组件，可通过事件监听清理资源：
+   ```ts
+   export default async function customWaitExec({ inputs, signal }: OperatorArgs): Promise<OperatorOutput> {
+       return new Promise((resolve, reject) => {
+           if (signal?.aborted) {
+               return reject(signal.reason);
+           }
+           const timer = setTimeout(() => {
+               resolve({ branch: "default", output: { done: true } });
+           }, 5000);
+
+           signal?.addEventListener("abort", () => {
+               clearTimeout(timer);
+               reject(signal.reason);
+           }, { once: true });
+       });
+   }
+   ```
+
+---
+
 ## 4. 详细修改文件与代码方案
 
 为完成上述改造，在 `light_dag` 仓库中需要修改以下文件：
@@ -603,4 +670,7 @@ export {
    ```
 3. **消除资源销毁竞争**：
    业务的 `run.ts` 在 `await dag.run(...)` 之后执行 `cleanUp()` 时，由于 DAG 已经等待在途任务优雅 Drain 完毕，不会再发生后台异步任务被腰斩崩溃的问题。
+4. **算子零负担接入优雅中断（AbortSignal）**：
+   算子按需选择性接入 `signal`。不关心中断的算子可完全忽略该参数；关心中断的算子（如网络爬虫、AI 接口调用、大循环处理）无需任何额外配置，直接透传 `signal` 给 `fetch` 或在循环中调用 `signal?.throwIfAborted()`，彻底避免无效的网络开销与内存空转。
+
 
