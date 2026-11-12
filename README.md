@@ -12,3 +12,4 @@ A lightweight reactive Directed Acyclic Graph (DAG) execution engine for TypeScr
 ## Architecture Proposals
 
 See [REFACTORING_PROPOSAL.md](./REFACTORING_PROPOSAL.md) for the detailed proposal on framework-level error handling, graceful lifecycle management, and active execution draining.
+
