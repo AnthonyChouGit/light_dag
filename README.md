@@ -9,7 +9,7 @@ A lightweight, schema-validated Directed Acyclic Graph (DAG) execution engine fo
 - **Contract-First**: Inputs, branched outputs, shared dependencies (`requires`), and runtime `options` are validated at runtime with [Zod](https://github.com/colinhacks/zod).
 - **Decoupled Namespace**: Operators use local schema keys and are wired into any graph via `.setName()`, `.mapInput()`, `.mapOutput()`, `.mapRequires()`, and `.mapOptions()`.
 - **Worker-Ready**: Run operators on the main event loop or offload CPU-heavy work to [Piscina](https://github.com/piscinajs/piscina) worker threads.
-- **Safe Lifecycle**: Built-in `DagNodeError` attribution, `setOnError` alerting hook, cooperative `AbortSignal` cancellation, and automatic draining of in-flight operators before cleanup.
+- **Safe Lifecycle**: Built-in framework error boundary, `setOnError(err, node_name)` hook with automatic fallback for any uncaught operator exception, cooperative `AbortSignal` cancellation, and automatic draining of in-flight operators before cleanup.
 
 ---
 
@@ -117,7 +117,7 @@ export default async function myExec(
 ```
 
 - **Return Value**: `{ branch, output }`. `branch` selects which schema in `output_schemas` validates `output` and which downstream branch wakes up.
-- **Error Handling**: **Do not** wrap `exec` in `try/catch` to return an `"error"` branch. Throw a normal `Error` (or let async calls reject); `LightDag` automatically wraps it in `DagNodeError(node_name, cause)` and triggers `setOnError`.
+- **Error Handling**: **Do not** wrap `exec` in `try/catch` to return an `"error"` branch or wrap exceptions manually. Any exception thrown inside `exec` (database errors, HTTP failures, SDK rejections) is automatically caught by `LightDag` and routed to `setOnError(err, node_name)`—or logged by the framework's built-in fallback if `setOnError` is not configured.
 
 ---
 
@@ -228,16 +228,24 @@ export const alert_dag = new LightDag([router, send_sms, send_email, urgent_merg
 
 ### 3.3 Running the DAG & Cleaning Up (`run.ts`)
 
-`dag.run()` always waits for all in-flight operators to finish (or abort) before returning or rethrowing, so closing database connections and worker pools in `finally` is race-free:
+`dag.run()` catches all errors internally and returns `undefined` on failure:
+- **Framework-level errors** (schema mismatch, missing input/output task, cycle detection, or timeout) are logged directly by the framework.
+- **Operator `exec` errors** (any exception thrown by user code) are routed to a single DAG-level `setOnError(err, node_name)` handler (or logged by the framework's default fallback if omitted). You do not define handlers per operator—branch on `node_name` inside `setOnError` when specific operators require custom recovery.
+- All in-flight operators are drained before `dag.run()` returns, so `try / finally` resource cleanup is always race-free without needing a `catch` block:
 
 ```ts
-import { DagNodeError } from "light-dag";
 import { alert_dag } from "./branching.dag.js";
 
 alert_dag.setDebug(true);       // Validate graph topology & log operator start/end
 alert_dag.setTimeout(30_000);   // Abort the run if it exceeds 30s
-alert_dag.setOnError(async (err: DagNodeError) => {
-    await notifyAdmin(`Operator "${err.node_name}" failed`, err.cause);
+alert_dag.setOnError(async (err, node_name) => {
+    if (node_name === "send_sms") {
+        await triggerSmsFallback(err);
+    } else if (node_name === "send_email") {
+        await queueEmailRetry(err);
+    } else {
+        await notifyAdmin(`Operator "${node_name}" failed`, err);
+    }
 });
 
 try {
@@ -248,12 +256,8 @@ try {
         { sms_label: "SMS", email_label: "EMAIL" },     // options (for options_schema)
         workerPool                                      // Piscina pool (for *Thread operators)
     );
-    console.log("Completed:", res.urgent_done);
-} catch (err) {
-    if (err instanceof DagNodeError) {
-        console.error(`Failed at node "${err.node_name}":`, err.cause);
-    } else {
-        console.error("Execution aborted:", err);
+    if (res) {
+        console.log("Completed:", res.urgent_done);
     }
 } finally {
     await workerPool.destroy();
@@ -271,7 +275,7 @@ Complete, self-contained examples live in [`./examples`](./examples) (excluded f
 examples/
 ├── 01-basic-pipeline/          # Single-file operators, requires/options, reusing an operator twice
 ├── 02-conditional-branching/   # Multi-branch routing (urgent vs. normal) + MergeStatusOperator barrier
-└── 03-error-and-cancellation/  # DagNodeError, setOnError hook, AbortSignal cleanup, safe finally teardown
+└── 03-error-and-cancellation/  # Default error fallback, setOnError hook, AbortSignal cleanup, safe finally teardown
 ```
 
 ```bash

@@ -1,20 +1,26 @@
 import { type Piscina } from "piscina";
 import { type Operator, type OperatorArgs, OperatorOutputSchema } from "./operator.js";
 
-/** Error thrown when a DAG operator node fails, preserving the root failing node name and cause. */
-export class DagNodeError extends Error {
+/** Internal wrapper preserving the failing operator's name and original thrown error across promise chains. */
+class DagNodeError extends Error {
     constructor(
         public readonly node_name: string,
         public override readonly cause: unknown
     ) {
         const msg = cause instanceof Error ? cause.message : String(cause);
-        super(`[LightDag] Node "${node_name}" failed: ${msg}`);
+        super(`[LightDag] Operator "${node_name}" failed: ${msg}`);
         this.name = "DagNodeError";
     }
 }
 
-/** Optional hook invoked when run() fails with a DagNodeError (e.g. for centralized alerting). */
-export type ErrorHandlerHook = (error: DagNodeError) => Promise<void> | void;
+/**
+ * Unified DAG-level error handler invoked when any operator's exec() throws an error.
+ * Register a single handler for the entire DAG; inspect `node_name` (e.g. via `if` / `switch`)
+ * only when you need different recovery logic for specific operators.
+ * @param error     The original error thrown inside exec() (e.g. DB error, network error, etc.).
+ * @param node_name The unique name of the operator that failed.
+ */
+export type ErrorHandlerHook = (error: unknown, node_name: string) => Promise<void> | void;
 
 /**
  * A lightweight DAG executor that wires Operators together via named promises.
@@ -147,10 +153,7 @@ export class LightDag {
         context?: Record<string, unknown>,
         options?: Record<string, unknown>,
         pool?: Piscina
-    ) {
-        if (this.debug)
-            this.validateGraph(inputs, outputs);
-
+    ): Promise<Record<string, unknown> | undefined> {
         // Create a promise + resolve/reject pair for every global task name.
         // Operators await input promises and resolve output promises when done.
         const tasks = new Map<string, Promise<unknown>>();
@@ -175,6 +178,9 @@ export class LightDag {
                     reject(err);
             }, this.timeout);
         try {
+            if (this.debug)
+                this.validateGraph(inputs, outputs);
+
             // Kick off all operators concurrently — they'll block on their input promises.
             for (const op_name of this.operators.keys())
                 this.runNode(op_name, tasks, resolves, active_executions, abort_controller, context, options, pool);
@@ -182,7 +188,7 @@ export class LightDag {
             for (const [input_name, input_value] of Object.entries(inputs)) {
                 const entry = resolves.get(input_name);
                 if (!entry)
-                    throw new Error(`Input "${input_name}" not found`);
+                    throw new Error(`[LightDag] Input "${input_name}" not found in the DAG`);
 
                 entry.resolve(input_value);
             }
@@ -190,7 +196,7 @@ export class LightDag {
             const output_promises = outputs.map((output_name) => {
                 const task = tasks.get(output_name);
                 if (!task)
-                    throw new Error(`Requested output "${output_name}" does not exist in the DAG`);
+                    throw new Error(`[LightDag] Requested output "${output_name}" does not exist in the DAG`);
                 return task;
             });
             const resolved_outputs = await Promise.all(output_promises);
@@ -201,11 +207,25 @@ export class LightDag {
             this.log("run() completed");
             return output_values;
         } catch (err) {
-            // Broadcast cancellation to in-flight operators before running error handler.
+            // Broadcast cancellation to all in-flight operators.
             abort_controller.abort(err);
-            if (this.error_handler && err instanceof DagNodeError)
-                await this.error_handler(err);
-            throw err;
+
+            if (err instanceof DagNodeError) {
+                // User-defined operator exec() error: delegate to setOnError or use framework fallback.
+                if (this.error_handler) {
+                    try {
+                        await this.error_handler(err.cause, err.node_name);
+                    } catch (hook_err) {
+                        console.error("[LightDag] Error in onError handler:", hook_err);
+                    }
+                } else {
+                    console.error(`[LightDag] Unhandled error in operator "${err.node_name}":`, err.cause);
+                }
+            } else {
+                // Framework-level error (wiring, schema validation, cycle detection, or timeout).
+                console.error("[LightDag] Framework error:", err);
+            }
+            return undefined;
         } finally {
             if (timeout_id)
                 clearTimeout(timeout_id);
@@ -308,6 +328,15 @@ export class LightDag {
             let raw_output: unknown;
             try {
                 raw_output = await exec_promise;
+            } catch (exec_err) {
+                // If the DAG was already aborted (e.g. by a global timeout or another operator failing first),
+                // this operator's rejection is a side-effect of cooperative cancellation (e.g. fetch/Piscina
+                // throwing AbortError). Re-throw the original abort reason so we don't misattribute a timeout
+                // or another node's failure as a new DagNodeError from this operator.
+                if (abort_controller.signal.aborted)
+                    throw abort_controller.signal.reason ?? exec_err;
+                // Wrap genuine user exec() failures so run() routes them to setOnError instead of framework error logging.
+                throw new DagNodeError(name, exec_err);
             } finally {
                 active_executions.delete(exec_promise);
             }
@@ -331,12 +360,14 @@ export class LightDag {
             }
             this.log(`[${name}] END — outputs produced: [${global_output_names.join(", ")}] (branch: ${op_output.branch})`);
         } catch (err) {
-            // On failure, wrap in DagNodeError (preserving root node name) and
-            // reject all output promises so downstream operators don't hang.
-            const dag_err = err instanceof DagNodeError ? err : new DagNodeError(name, err);
-            this.log(`[${name}] END — error, rejecting outputs: [${all_global_output_names.join(", ")}]`, dag_err);
+            // Preserve DagNodeError (user exec failure) or upstream framework Error;
+            // attach operator context only for local framework/schema errors.
+            const propagated_err = (err instanceof DagNodeError || (err instanceof Error && err.message.startsWith("[LightDag]")))
+                ? err
+                : new Error(`[LightDag] Operator "${name}": ${err instanceof Error ? err.message : String(err)}`, { cause: err });
+            this.log(`[${name}] END — error, rejecting outputs: [${all_global_output_names.join(", ")}]`, propagated_err);
             for (const global_name of all_global_output_names) {
-                resolves.get(global_name)?.reject(dag_err);
+                resolves.get(global_name)?.reject(propagated_err);
             }
         }
     }

@@ -1,10 +1,18 @@
-import { DagNodeError } from "../../src/index.js";
 import { resilient_dag } from "./resilient.dag.js";
 
 async function main() {
-    // Register centralized error alerting
-    resilient_dag.setOnError(async (err: DagNodeError) => {
-        console.error(`[AlertHook] Operator "${err.node_name}" failed:`, (err.cause as Error)?.message ?? err.cause);
+    // 1. Without setOnError: framework logs a built-in fallback error message
+    console.log("--- Run 1: Default framework fallback ---");
+    await resilient_dag.run({ job_id: "job-41" }, ["summary"]);
+
+    // 2. With setOnError: one unified DAG-level handler; branch on node_name for operator-specific actions
+    console.log("\n--- Run 2: Custom setOnError handler ---");
+    resilient_dag.setOnError(async (err, node_name) => {
+        if (node_name === "failing_task") {
+            console.error(`[AlertHook] Upstream failure in "${node_name}":`, (err as Error)?.message ?? err);
+        } else {
+            console.error(`[AlertHook] Unexpected failure in "${node_name}":`, err);
+        }
     });
 
     const resource = {
@@ -16,12 +24,9 @@ async function main() {
     };
 
     try {
-        await resilient_dag.run({ job_id: "job-42" }, ["summary"]);
-    } catch (err) {
-        if (err instanceof DagNodeError) {
-            console.error(`[Main] Caught DagNodeError from "${err.node_name}"`);
-        } else {
-            console.error("[Main] Unexpected error:", err);
+        const res = await resilient_dag.run({ job_id: "job-42" }, ["summary"]);
+        if (res) {
+            console.log("Result:", res.summary);
         }
     } finally {
         // Executed only after all in-flight operators (including long_task) have exited
@@ -30,4 +35,5 @@ async function main() {
 }
 
 main().catch(console.error);
+
 
