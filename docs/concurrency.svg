@@ -1,0 +1,131 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 640" width="100%" height="100%" style="background-color: #0d1117; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#58a6ff" />
+    </marker>
+    <marker id="arrow-worker" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#a371f7" />
+    </marker>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="115%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000000" flood-opacity="0.4" />
+    </filter>
+  </defs>
+
+  <style>
+    .title { font-size: 16px; font-weight: 700; fill: #f0f6fc; letter-spacing: 0.5px; }
+    .panel-title { font-size: 14px; font-weight: 700; fill: #f0f6fc; }
+    .node-title { font-size: 13px; font-weight: 600; fill: #e6edf3; }
+    .node-sub { font-size: 11px; fill: #8b949e; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.5px; fill: #e6edf3; }
+    .accent { fill: #58a6ff; }
+    .worker-text { fill: #d2a8ff; }
+    .panel { fill: #161b22; stroke: #30363d; stroke-width: 1.5; }
+    .card { fill: #0d1117; stroke: #30363d; stroke-width: 1.25; }
+    .node { fill: #21262d; stroke: #30363d; stroke-width: 1.5; }
+    .main-box { fill: #21262d; stroke: #388bfd; stroke-width: 1.25; }
+    .worker-box { fill: #8957e51a; stroke: #a371f7; stroke-width: 1.25; stroke-dasharray: 5,4; }
+    .conn { fill: none; stroke: #58a6ff; stroke-width: 1.75; }
+    .conn-worker { fill: none; stroke: #a371f7; stroke-width: 1.5; }
+  </style>
+
+  <rect x="10" y="10" width="860" height="620" rx="16" fill="#0d1117" stroke="#30363d" stroke-width="1.5" />
+  <text x="440" y="42" text-anchor="middle" class="title">Concurrency in LightDAG</text>
+
+  <!-- ==================== PANEL A: BETWEEN OPERATORS ==================== -->
+  <rect x="30" y="62" width="820" height="190" rx="12" class="panel" />
+  <text x="52" y="90" class="panel-title">① Between operators — automatic</text>
+  <text x="52" y="108" class="node-sub">Each operator starts as soon as all of its inputs resolve. Operators that don't depend on each other overlap in time.</text>
+
+  <path d="M 220 164 L 280 164 L 280 144 L 334 144" class="conn" marker-end="url(#arrow)" />
+  <path d="M 280 164 L 280 196 L 334 196" class="conn" marker-end="url(#arrow)" />
+  <path d="M 500 144 L 560 144 L 560 164 L 614 164" class="conn" marker-end="url(#arrow)" />
+  <path d="M 500 196 L 560 196 L 560 164" class="conn" />
+
+  <rect x="328" y="116" width="184" height="108" rx="10" fill="none" stroke="#3fb950" stroke-width="1.25" stroke-dasharray="4,4" />
+  <text x="420" y="241" text-anchor="middle" class="node-sub" style="fill:#3fb950">run concurrently</text>
+
+  <g filter="url(#shadow)">
+    <rect x="80" y="142" width="140" height="44" rx="8" class="node" />
+    <text x="150" y="168" text-anchor="middle" class="node-title">load</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="340" y="124" width="160" height="40" rx="8" class="node" />
+    <text x="420" y="148" text-anchor="middle" class="node-title">enrich</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="340" y="176" width="160" height="40" rx="8" class="node" />
+    <text x="420" y="200" text-anchor="middle" class="node-title">audit</text>
+  </g>
+  <g filter="url(#shadow)">
+    <rect x="620" y="142" width="140" height="44" rx="8" class="node" />
+    <text x="690" y="168" text-anchor="middle" class="node-title">merge</text>
+  </g>
+
+  <!-- ==================== PANEL B: INSIDE AN OPERATOR ==================== -->
+  <rect x="30" y="270" width="820" height="330" rx="12" class="panel" />
+  <text x="52" y="298" class="panel-title">② Inside an operator — your choice</text>
+  <text x="52" y="316" class="node-sub">Pick the model that matches what exec() spends its time on.</text>
+
+  <!-- Card 1: Async I/O -->
+  <rect x="46" y="334" width="250" height="250" rx="10" class="card" />
+  <text x="64" y="362" class="node-title">⚡ Async I/O</text>
+  <text x="64" y="380" class="node-sub">Main thread · event loop</text>
+  <rect x="111" y="398" width="120" height="30" rx="6" class="main-box" />
+  <text x="171" y="417" text-anchor="middle" class="mono">exec()</text>
+  <path d="M 171 428 L 171 446" class="conn" />
+  <path d="M 101 446 L 241 446" class="conn" />
+  <path d="M 101 446 L 101 462" class="conn" marker-end="url(#arrow)" />
+  <path d="M 171 446 L 171 462" class="conn" marker-end="url(#arrow)" />
+  <path d="M 241 446 L 241 462" class="conn" marker-end="url(#arrow)" />
+  <rect x="71" y="468" width="60" height="26" rx="5" class="main-box" />
+  <text x="101" y="485" text-anchor="middle" class="mono">HTTP</text>
+  <rect x="141" y="468" width="60" height="26" rx="5" class="main-box" />
+  <text x="171" y="485" text-anchor="middle" class="mono">DB</text>
+  <rect x="211" y="468" width="60" height="26" rx="5" class="main-box" />
+  <text x="241" y="485" text-anchor="middle" class="mono">LLM</text>
+  <text x="171" y="522" text-anchor="middle" class="mono accent">await Promise.all([...])</text>
+  <line x1="61" y1="538" x2="281" y2="538" stroke="#30363d" />
+  <text x="171" y="562" text-anchor="middle" class="node-sub">Best for network, DB and AI calls</text>
+
+  <!-- Card 2: Worker operator -->
+  <rect x="315" y="334" width="250" height="250" rx="10" class="card" />
+  <text x="333" y="362" class="node-title">🧵 Worker operator</text>
+  <text x="333" y="380" class="node-sub">Whole exec() runs in a worker</text>
+  <rect x="370" y="398" width="140" height="30" rx="6" class="main-box" />
+  <text x="440" y="417" text-anchor="middle" class="mono">dag.run(…, pool)</text>
+  <rect x="360" y="442" width="160" height="58" rx="8" class="worker-box" />
+  <path d="M 440 428 L 440 452" class="conn-worker" marker-end="url(#arrow-worker)" />
+  <rect x="395" y="458" width="90" height="24" rx="5" fill="#21262d" stroke="#a371f7" stroke-width="1.25" />
+  <text x="440" y="474" text-anchor="middle" class="mono worker-text">exec()</text>
+  <text x="440" y="494" text-anchor="middle" class="node-sub" style="fill:#a371f7; font-size:10px">worker thread</text>
+  <text x="440" y="522" text-anchor="middle" class="mono accent">exec = import.meta.filename</text>
+  <line x1="330" y1="538" x2="550" y2="538" stroke="#30363d" />
+  <text x="440" y="562" text-anchor="middle" class="node-sub">Best when the whole step is CPU-bound</text>
+
+  <!-- Card 3: Sub-task fan-out -->
+  <rect x="584" y="334" width="250" height="250" rx="10" class="card" />
+  <text x="602" y="362" class="node-title">🌿 Sub-task fan-out</text>
+  <text x="602" y="380" class="node-sub">Main exec() dispatches to workers</text>
+  <rect x="649" y="398" width="120" height="30" rx="6" class="main-box" />
+  <text x="709" y="417" text-anchor="middle" class="mono">exec()</text>
+  <path d="M 709 428 L 709 446" class="conn-worker" />
+  <path d="M 639 446 L 779 446" class="conn-worker" />
+  <path d="M 639 446 L 639 462" class="conn-worker" marker-end="url(#arrow-worker)" />
+  <path d="M 709 446 L 709 462" class="conn-worker" marker-end="url(#arrow-worker)" />
+  <path d="M 779 446 L 779 462" class="conn-worker" marker-end="url(#arrow-worker)" />
+  <rect x="609" y="468" width="60" height="26" rx="5" class="worker-box" />
+  <text x="639" y="485" text-anchor="middle" class="mono worker-text">task</text>
+  <rect x="679" y="468" width="60" height="26" rx="5" class="worker-box" />
+  <text x="709" y="485" text-anchor="middle" class="mono worker-text">task</text>
+  <rect x="749" y="468" width="60" height="26" rx="5" class="worker-box" />
+  <text x="779" y="485" text-anchor="middle" class="mono worker-text">task</text>
+  <text x="709" y="522" text-anchor="middle" class="mono accent">pool.run(task, { signal })</text>
+  <line x1="599" y1="538" x2="819" y2="538" stroke="#30363d" />
+  <text x="709" y="562" text-anchor="middle" class="node-sub">Best for many independent CPU jobs</text>
+
+  <!-- ==================== LEGEND ==================== -->
+  <rect x="300" y="608" width="18" height="12" rx="3" class="main-box" />
+  <text x="326" y="618" class="node-sub">main thread</text>
+  <rect x="440" y="608" width="18" height="12" rx="3" class="worker-box" />
+  <text x="466" y="618" class="node-sub">Piscina worker thread</text>
+</svg>
