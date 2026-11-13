@@ -15,6 +15,16 @@ A lightweight, promise-driven DAG execution engine for TypeScript and Node.js.
 
 ---
 
+## Installation
+
+```bash
+npm install light-dag zod piscina
+```
+
+> Requires Node.js `>=22.0.0` (uses `Promise.withResolvers` and `import.meta.filename`).
+
+---
+
 ## Recommended Project Structure
 
 Organize your application into three layers: **one file per operator** (`operators/*.operator.ts`), **graph assembly** (`*.dag.ts`), and **runtime entry** (`run.ts`):
@@ -226,3 +236,10 @@ npx tsx examples/01-basic-pipeline/run.ts
 npx tsx examples/02-conditional-branching/run.ts
 npx tsx examples/03-error-and-cancellation/run.ts
 ```
+
+---
+
+## License
+
+[MIT](./LICENSE) © Anthony Chou
+

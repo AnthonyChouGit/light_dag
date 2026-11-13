@@ -1,13 +1,50 @@
 {
   "name": "light-dag",
   "version": "0.1.0",
-  "description": "A lightweight reactive DAG execution engine built on Promises and Zod schemas",
+  "description": "A lightweight, promise-driven DAG execution engine for TypeScript and Node.js with Zod validation and Piscina worker support.",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "docs",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "tsc",
-    "typecheck": "tsc --noEmit"
+    "prepublishOnly": "npm run typecheck && npm run build"
+  },
+  "keywords": [
+    "dag",
+    "workflow",
+    "pipeline",
+    "task-runner",
+    "orchestration",
+    "zod",
+    "piscina",
+    "worker-threads",
+    "typescript"
+  ],
+  "author": "Anthony Chou <anthonychou97@hotmail.com>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/AnthonyChouGit/light_dag.git"
+  },
+  "homepage": "https://github.com/AnthonyChouGit/light_dag#readme",
+  "bugs": {
+    "url": "https://github.com/AnthonyChouGit/light_dag/issues"
+  },
+  "engines": {
+    "node": ">=22.0.0"
   },
   "dependencies": {
     "piscina": "^5.3.0",
@@ -19,4 +56,3 @@
     "typescript": "^7.0.2"
   }
 }
-
