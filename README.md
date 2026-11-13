@@ -6,10 +6,12 @@ A lightweight, promise-driven DAG execution engine for TypeScript and Node.js.
   <img src="docs/architecture.svg" alt="LightDAG Architecture" width="100%" />
 </p>
 
-- **Automatic Concurrency**: Nodes run in parallel automatically as soon as their upstream inputs resolve—no manual topological scheduling needed.
-- **Zod Validation**: Runtime validation for `inputs`, branched `outputs`, shared `requires`, and `options`.
-- **Flexible Execution**: Supports main-thread async operators, [Piscina](https://github.com/piscinajs/piscina) worker-thread operators, conditional branching, and operator reuse.
-- **Unified Error Boundary**: Built-in framework error catching, centralized `setOnError(err, node_name)`, cooperative `AbortSignal` cancellation, and automatic in-flight task draining before cleanup.
+- **Promise-Driven Concurrency**: Operators launch in parallel automatically as soon as their upstream inputs resolve, with zero manual scheduling.
+- **Runtime Contract Validation**: Inputs, branched outputs, shared `requires`, and runtime `options` are validated at every node boundary via [Zod](https://github.com/colinhacks/zod).
+- **Conditional Branching**: Operators return `{ branch, output }` to dynamically route execution down specific subgraphs without wasting work.
+- **Decoupled Operator Reuse**: Instantiate the same operator class multiple times in one graph by remapping its local input, output, and option keys.
+- **Main & Worker Thread Execution**: Run async I/O operators on the main event loop or offload CPU-bound operators to [Piscina](https://github.com/piscinajs/piscina) worker threads.
+- **Unified Error & Lifecycle Control**: Built-in error boundary (`setOnError`), timeout and `AbortSignal` propagation, cycle detection, and in-flight task draining.
 
 ---
 
