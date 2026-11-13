@@ -3,7 +3,7 @@
 A lightweight, promise-driven DAG execution engine for TypeScript and Node.js.
 
 <p align="center">
-  <img src="docs/overview.svg" alt="LightDAG Architecture" width="100%" />
+  <img src="docs/architecture.svg" alt="LightDAG Architecture" width="100%" />
 </p>
 
 - **Automatic Concurrency**: Nodes run in parallel automatically as soon as their upstream inputs resolve—no manual topological scheduling needed.

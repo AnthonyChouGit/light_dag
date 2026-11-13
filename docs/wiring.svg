@@ -28,7 +28,7 @@
   </style>
 
   <rect x="10" y="10" width="860" height="550" rx="16" fill="#0d1117" stroke="#30363d" stroke-width="1.5" />
-  <text x="440" y="42" text-anchor="middle" class="title">Example 02 — Branching &amp; Operator Reuse</text>
+  <text x="440" y="42" text-anchor="middle" class="title">Conditional Branching &amp; Operator Reuse</text>
 
   <!-- ==================== CONNECTORS ==================== -->
   <path d="M 440 102 L 440 125" class="conn" marker-end="url(#arrow)" />
@@ -48,54 +48,54 @@
   <rect x="205" y="209" width="170" height="22" rx="11" fill="#0d1117" stroke="#f0883e" stroke-width="1" />
   <text x="290" y="224" text-anchor="middle" class="mono" style="fill:#f0883e">⚡ urgent → urgent_msg</text>
   <rect x="525" y="209" width="170" height="22" rx="11" fill="#0d1117" stroke="#58a6ff" stroke-width="1" />
-  <text x="610" y="224" text-anchor="middle" class="mono" style="fill:#58a6ff">📝 normal → normal_msg</text>
+  <text x="610" y="224" text-anchor="middle" class="mono" style="fill:#58a6ff">● normal → normal_msg</text>
   <text x="178" y="346" class="mono">sms_sent</text>
   <text x="402" y="346" text-anchor="end" class="mono">email_sent</text>
 
   <!-- ==================== NODES ==================== -->
   <g filter="url(#shadow)">
     <rect x="330" y="64" width="220" height="38" rx="19" fill="#161b22" stroke="#388bfd" stroke-width="2" />
-    <text x="440" y="88" text-anchor="middle" class="badge-text">🏷️ severity · message</text>
+    <text x="440" y="88" text-anchor="middle" class="badge-text">● severity · message</text>
   </g>
 
   <g filter="url(#shadow)">
     <rect x="330" y="130" width="220" height="52" rx="8" class="node" />
-    <text x="440" y="152" text-anchor="middle" class="node-title">🔀 route_alert</text>
+    <text x="440" y="152" text-anchor="middle" class="node-title">▸ route_alert</text>
     <text x="440" y="170" text-anchor="middle" class="node-sub">RouteAlertOperator</text>
   </g>
 
   <g filter="url(#shadow)">
     <rect x="70" y="270" width="200" height="52" rx="8" class="node" />
-    <text x="170" y="292" text-anchor="middle" class="node-title">📱 send_sms</text>
+    <text x="170" y="292" text-anchor="middle" class="node-title">✦ send_sms</text>
     <text x="170" y="310" text-anchor="middle" class="node-sub">SendChannelOperator ♻</text>
   </g>
 
   <g filter="url(#shadow)">
     <rect x="310" y="270" width="200" height="52" rx="8" class="node" />
-    <text x="410" y="292" text-anchor="middle" class="node-title">✉️ send_email</text>
+    <text x="410" y="292" text-anchor="middle" class="node-title">✉ send_email</text>
     <text x="410" y="310" text-anchor="middle" class="node-sub">SendChannelOperator ♻</text>
   </g>
 
   <g filter="url(#shadow)">
     <rect x="620" y="270" width="200" height="52" rx="8" class="node" />
-    <text x="720" y="292" text-anchor="middle" class="node-title">🗒️ send_log</text>
+    <text x="720" y="292" text-anchor="middle" class="node-title">◆ send_log</text>
     <text x="720" y="310" text-anchor="middle" class="node-sub">SendChannelOperator ♻</text>
   </g>
 
   <g filter="url(#shadow)">
     <rect x="190" y="390" width="200" height="52" rx="8" class="node" />
-    <text x="290" y="412" text-anchor="middle" class="node-title">🧩 urgent_merge</text>
+    <text x="290" y="412" text-anchor="middle" class="node-title">◈ urgent_merge</text>
     <text x="290" y="430" text-anchor="middle" class="node-sub">MergeStatusOperator</text>
   </g>
 
   <g filter="url(#shadow)">
     <rect x="210" y="472" width="160" height="38" rx="19" fill="#161b22" stroke="#3fb950" stroke-width="2" />
-    <text x="290" y="496" text-anchor="middle" class="ok-text">✅ urgent_done</text>
+    <text x="290" y="496" text-anchor="middle" class="ok-text">✓ urgent_done</text>
   </g>
 
   <g filter="url(#shadow)">
     <rect x="640" y="472" width="160" height="38" rx="19" fill="#161b22" stroke="#3fb950" stroke-width="2" />
-    <text x="720" y="496" text-anchor="middle" class="ok-text">✅ normal_done</text>
+    <text x="720" y="496" text-anchor="middle" class="ok-text">✓ normal_done</text>
   </g>
 
   <!-- ==================== LEGEND ==================== -->
@@ -103,7 +103,6 @@
   <text x="86" y="542" class="node-sub">urgent branch</text>
   <line x1="190" y1="538" x2="218" y2="538" stroke="#58a6ff" stroke-width="2" />
   <text x="226" y="542" class="node-sub">normal branch</text>
-  <text x="340" y="542" class="node-sub">♻ same class, reused via .setName() + .map*()</text>
+  <text x="340" y="542" class="node-sub">♻ reused class with mapped keys</text>
   <text x="830" y="542" text-anchor="end" class="node-sub">Only the returned branch executes</text>
 </svg>
-

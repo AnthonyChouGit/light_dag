@@ -1,0 +1,119 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 880 480" width="100%" height="100%" style="background-color: #0d1117; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif;">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#58a6ff" />
+    </marker>
+    <marker id="arrow-muted" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#8b949e" />
+    </marker>
+    <marker id="arrow-error" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#f85149" />
+    </marker>
+    <marker id="arrow-success" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#3fb950" />
+    </marker>
+    <filter id="shadow" x="-5%" y="-5%" width="110%" height="115%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000000" flood-opacity="0.4" />
+    </filter>
+  </defs>
+
+  <style>
+    .title { font-size: 16px; font-weight: 700; fill: #f0f6fc; letter-spacing: 0.5px; }
+    .node-title { font-size: 13px; font-weight: 600; fill: #e6edf3; }
+    .node-sub { font-size: 11px; fill: #8b949e; }
+    .badge-text { font-size: 12px; font-weight: 600; fill: #58a6ff; }
+    .conn { fill: none; stroke: #58a6ff; stroke-width: 1.75; }
+    .conn-ctx { fill: none; stroke: #8b949e; stroke-width: 1.5; stroke-dasharray: 4,3; }
+    .conn-ok { fill: none; stroke: #3fb950; stroke-width: 2; }
+    .conn-err { fill: none; stroke: #f85149; stroke-width: 1.5; stroke-dasharray: 4,4; opacity: 0.8; }
+  </style>
+
+  <!-- Outer Frame -->
+  <rect x="10" y="10" width="860" height="460" rx="16" fill="#0d1117" stroke="#30363d" stroke-width="1.5" />
+  <text x="440" y="42" text-anchor="middle" class="title">LightDAG Execution Architecture</text>
+
+  <!-- ==================== CONNECTORS ==================== -->
+  <!-- Inputs -> Parallel Operators (Symmetrical Fork) -->
+  <path d="M 310 88 L 265 88 L 265 135" class="conn" marker-end="url(#arrow)" />
+  <path d="M 460 88 L 505 88 L 505 135" class="conn" marker-end="url(#arrow)" />
+
+  <!-- Parallel Operators -> Branch & Merge (Symmetrical Join) -->
+  <path d="M 265 192 L 265 212 L 345 212 L 345 229" class="conn" marker-end="url(#arrow)" />
+  <path d="M 505 192 L 505 212 L 425 212 L 425 229" class="conn" marker-end="url(#arrow)" />
+
+  <!-- Context & Options -> Branch & Merge -->
+  <path d="M 215 260 L 270 260" class="conn-ctx" marker-end="url(#arrow-muted)" />
+
+  <!-- Branch & Merge -> Downstream Operator -->
+  <path d="M 385 286 L 385 315" class="conn" marker-end="url(#arrow)" />
+
+  <!-- Downstream Operator -> Terminal Success -->
+  <path d="M 385 372 L 385 402" class="conn-ok" marker-end="url(#arrow-success)" />
+
+  <!-- Failure Paths -> Error Boundary (Smooth non-crossing curves) -->
+  <path d="M 605 166 C 634 166, 634 252, 654 252" class="conn-err" marker-end="url(#arrow-error)" />
+  <path d="M 495 260 C 575 260, 610 272, 654 272" class="conn-err" marker-end="url(#arrow-error)" />
+  <path d="M 495 346 C 585 346, 610 292, 654 292" class="conn-err" marker-end="url(#arrow-error)" />
+
+  <!-- Error Boundary -> Abort & Drain -->
+  <path d="M 755 308 L 755 340" stroke="#f85149" stroke-width="2" fill="none" marker-end="url(#arrow-error)" />
+
+  <!-- ==================== NODES ==================== -->
+  <!-- Top Input Pill -->
+  <g filter="url(#shadow)">
+    <rect x="310" y="68" width="150" height="40" rx="20" fill="#161b22" stroke="#388bfd" stroke-width="2" />
+    <text x="385" y="93" text-anchor="middle" class="badge-text">● Inputs</text>
+  </g>
+
+  <!-- Level 1: Parallel Operators -->
+  <g filter="url(#shadow)">
+    <rect x="165" y="140" width="200" height="52" rx="8" fill="#21262d" stroke="#30363d" stroke-width="1.5" />
+    <text x="265" y="162" text-anchor="middle" class="node-title">◆ Main-Thread Operator</text>
+    <text x="265" y="179" text-anchor="middle" class="node-sub">Async I/O · Shared Context</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="405" y="140" width="200" height="52" rx="8" fill="#21262d" stroke="#30363d" stroke-width="1.5" />
+    <text x="505" y="162" text-anchor="middle" class="node-title">✦ Worker-Thread Operator</text>
+    <text x="505" y="179" text-anchor="middle" class="node-sub">Worker Pool · Serializable Data</text>
+  </g>
+
+  <!-- Context & Options Side Pill -->
+  <g filter="url(#shadow)">
+    <rect x="40" y="240" width="175" height="40" rx="20" fill="#161b22" stroke="#30363d" stroke-width="1.75" />
+    <text x="127.5" y="265" text-anchor="middle" font-size="12" font-weight="600" fill="#c9d1d9">⚙ Context &amp; Options</text>
+  </g>
+
+  <!-- Level 2: Branch & Merge -->
+  <g filter="url(#shadow)">
+    <rect x="275" y="234" width="220" height="52" rx="8" fill="#21262d" stroke="#d29922" stroke-width="1.5" />
+    <text x="385" y="256" text-anchor="middle" class="node-title" fill="#f0e6c8">▸ Branch &amp; Merge</text>
+    <text x="385" y="273" text-anchor="middle" class="node-sub">Zod Validation · Promise Barrier</text>
+  </g>
+
+  <!-- Level 3: Downstream Operator -->
+  <g filter="url(#shadow)">
+    <rect x="275" y="320" width="220" height="52" rx="8" fill="#21262d" stroke="#30363d" stroke-width="1.5" />
+    <text x="385" y="342" text-anchor="middle" class="node-title">◆ Downstream Operator</text>
+    <text x="385" y="359" text-anchor="middle" class="node-sub">Triggered on Selected Branch</text>
+  </g>
+
+  <!-- Level 4: Terminal Success -->
+  <g filter="url(#shadow)">
+    <rect x="285" y="406" width="200" height="44" rx="22" fill="#1b4728" stroke="#3fb950" stroke-width="2" />
+    <text x="385" y="433" text-anchor="middle" font-size="14" font-weight="700" fill="#3fb950">✓ Resolved Outputs</text>
+  </g>
+
+  <!-- Right Side: Error Boundary & Drain -->
+  <g filter="url(#shadow)">
+    <rect x="660" y="236" width="190" height="72" rx="8" fill="#381a1e" stroke="#f85149" stroke-width="1.5" />
+    <text x="755" y="260" text-anchor="middle" font-size="13" font-weight="700" fill="#f85149">⚡ Error Boundary</text>
+    <text x="755" y="278" text-anchor="middle" font-size="11" fill="#e6edf3">Unified Handler &amp; Fallback</text>
+    <text x="755" y="294" text-anchor="middle" font-size="10.5" fill="#8b949e">Catches framework &amp; exec errors</text>
+  </g>
+
+  <g filter="url(#shadow)">
+    <rect x="660" y="344" width="190" height="44" rx="22" fill="#381a1e" stroke="#f85149" stroke-width="2" />
+    <text x="755" y="371" text-anchor="middle" font-size="13" font-weight="700" fill="#f85149">✕ Abort &amp; Drain Tasks</text>
+  </g>
+</svg>
