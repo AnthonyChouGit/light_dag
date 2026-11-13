@@ -1,10 +1,14 @@
 # LightDAG
 
+[![npm version](https://img.shields.io/npm/v/light-dag?color=388bfd&label=npm)](https://www.npmjs.com/package/light-dag)
+[![npm downloads](https://img.shields.io/npm/dm/light-dag?color=3fb950)](https://www.npmjs.com/package/light-dag)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D22.0.0-3fb950?logo=node.js&logoColor=white)](https://nodejs.org)
+[![TypeScript](https://img.shields.io/badge/TypeScript-ESM-3178c6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-d29922)](./LICENSE)
+
 A lightweight, promise-driven DAG execution engine for TypeScript and Node.js.
 
-<p align="center">
-  <img src="docs/architecture.svg" alt="LightDAG Architecture" width="100%" />
-</p>
+![LightDAG Architecture](./docs/architecture.svg)
 
 - **Promise-Driven Concurrency**: Operators launch in parallel automatically as soon as their upstream inputs resolve, with zero manual scheduling.
 - **Runtime Contract Validation**: Inputs, branched outputs, shared `requires`, and runtime `options` are validated at every node boundary via [Zod](https://github.com/colinhacks/zod).
@@ -18,7 +22,7 @@ A lightweight, promise-driven DAG execution engine for TypeScript and Node.js.
 ## Installation
 
 ```bash
-npm install light-dag zod piscina
+npm install light-dag
 ```
 
 > Requires Node.js `>=22.0.0` (uses `Promise.withResolvers` and `import.meta.filename`).
@@ -141,9 +145,7 @@ By default, an operator's local schema keys are used as global DAG task names. W
 | `.mapRequires(local, global)` | Pull local `requires_schema` key `local` from `context[global]` |
 | `.mapOptions(local, global)` | Pull local `options_schema` key `local` from `options[global]` |
 
-<p align="center">
-  <img src="docs/wiring.svg" alt="DAG Wiring, Branching, and Operator Reuse" width="100%" />
-</p>
+![DAG Wiring, Branching, and Operator Reuse](./docs/wiring.svg)
 
 ### 3.2 Assembling the Graph (`*.dag.ts`)
 
@@ -222,7 +224,7 @@ try {
 
 ## 4. Runnable Examples
 
-Complete, self-contained examples live in [`./examples`](./examples) (excluded from `npm run build`):
+Complete, self-contained examples live in [`./examples`](https://github.com/AnthonyChouGit/light_dag/tree/master/examples) (excluded from `npm run build`):
 
 ```
 examples/
