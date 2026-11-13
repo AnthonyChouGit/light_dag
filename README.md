@@ -1,18 +1,15 @@
 # LightDAG
 
-**LightDAG** is a lightweight, zero-boilerplate Directed Acyclic Graph (DAG) execution engine for TypeScript and Node.js. Instead of writing imperative `Promise.all` orchestration code, you declare operators with [Zod](https://github.com/colinhacks/zod) contracts and wire them into a graph—LightDAG resolves dependencies, maximizes concurrency, validates data boundaries, and manages execution safety automatically.
+A lightweight, promise-driven DAG execution engine for TypeScript and Node.js.
 
 <p align="center">
-  <img src="docs/overview.svg" alt="LightDAG Overview — Define, Wire, Run" width="100%" />
+  <img src="docs/overview.svg" alt="LightDAG Architecture" width="100%" />
 </p>
 
-### Why LightDAG
-
-- **Automatic Dependency-Driven Concurrency**: Every operator is backed by named promises—nodes launch as soon as their inputs resolve, allowing independent branches to run in parallel without manual topological sorting or glue code.
-- **Runtime Type & Contract Validation**: Inputs, branched outputs, shared dependencies (`requires`), and runtime `options` are validated with Zod at every node boundary, catching data mismatches before downstream nodes execute.
-- **Conditional Branching & Operator Reuse**: Operators can emit multiple named output branches (`{ branch, output }`) to activate different downstream paths, and a single operator class can be instantiated multiple times with `.setName()`, `.mapInput()`, `.mapOutput()`, `.mapRequires()`, and `.mapOptions()`.
-- **Main-Thread or Worker-Thread Execution**: Run async operators directly on the Node.js event loop, or offload CPU-intensive operators to [Piscina](https://github.com/piscinajs/piscina) worker threads by setting `exec = import.meta.filename`.
-- **Built-In Error Boundary & Safe Shutdown**: Framework errors and uncaught operator exceptions are handled uniformly (`setOnError(err, node_name)` with a default fallback), failures or timeouts broadcast `AbortSignal` to cancel in-flight work, and `dag.run()` drains all active executions before returning so `finally` resource cleanup is always race-free.
+- **Automatic Concurrency**: Nodes run in parallel automatically as soon as their upstream inputs resolve—no manual topological scheduling needed.
+- **Zod Validation**: Runtime validation for `inputs`, branched `outputs`, shared `requires`, and `options`.
+- **Flexible Execution**: Supports main-thread async operators, [Piscina](https://github.com/piscinajs/piscina) worker-thread operators, conditional branching, and operator reuse.
+- **Unified Error Boundary**: Built-in framework error catching, centralized `setOnError(err, node_name)`, cooperative `AbortSignal` cancellation, and automatic in-flight task draining before cleanup.
 
 ---
 
