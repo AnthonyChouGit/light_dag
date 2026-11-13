@@ -1,15 +1,18 @@
 # LightDAG
 
-A lightweight, schema-validated Directed Acyclic Graph (DAG) execution engine for TypeScript and Node.js.
+**LightDAG** is a lightweight, zero-boilerplate Directed Acyclic Graph (DAG) execution engine for TypeScript and Node.js. Instead of writing imperative `Promise.all` orchestration code, you declare operators with [Zod](https://github.com/colinhacks/zod) contracts and wire them into a graph—LightDAG resolves dependencies, maximizes concurrency, validates data boundaries, and manages execution safety automatically.
 
 <p align="center">
   <img src="docs/overview.svg" alt="LightDAG Overview — Define, Wire, Run" width="100%" />
 </p>
 
-- **Contract-First**: Inputs, branched outputs, shared dependencies (`requires`), and runtime `options` are validated at runtime with [Zod](https://github.com/colinhacks/zod).
-- **Decoupled Namespace**: Operators use local schema keys and are wired into any graph via `.setName()`, `.mapInput()`, `.mapOutput()`, `.mapRequires()`, and `.mapOptions()`.
-- **Worker-Ready**: Run operators on the main event loop or offload CPU-heavy work to [Piscina](https://github.com/piscinajs/piscina) worker threads.
-- **Safe Lifecycle**: Built-in framework error boundary, `setOnError(err, node_name)` hook with automatic fallback for any uncaught operator exception, cooperative `AbortSignal` cancellation, and automatic draining of in-flight operators before cleanup.
+### Why LightDAG
+
+- **Automatic Dependency-Driven Concurrency**: Every operator is backed by named promises—nodes launch as soon as their inputs resolve, allowing independent branches to run in parallel without manual topological sorting or glue code.
+- **Runtime Type & Contract Validation**: Inputs, branched outputs, shared dependencies (`requires`), and runtime `options` are validated with Zod at every node boundary, catching data mismatches before downstream nodes execute.
+- **Conditional Branching & Operator Reuse**: Operators can emit multiple named output branches (`{ branch, output }`) to activate different downstream paths, and a single operator class can be instantiated multiple times with `.setName()`, `.mapInput()`, `.mapOutput()`, `.mapRequires()`, and `.mapOptions()`.
+- **Main-Thread or Worker-Thread Execution**: Run async operators directly on the Node.js event loop, or offload CPU-intensive operators to [Piscina](https://github.com/piscinajs/piscina) worker threads by setting `exec = import.meta.filename`.
+- **Built-In Error Boundary & Safe Shutdown**: Framework errors and uncaught operator exceptions are handled uniformly (`setOnError(err, node_name)` with a default fallback), failures or timeouts broadcast `AbortSignal` to cancel in-flight work, and `dag.run()` drains all active executions before returning so `finally` resource cleanup is always race-free.
 
 ---
 
@@ -36,7 +39,7 @@ Each `*.operator.ts` file is self-contained:
 1. **Zod Schemas & Types**: `input_schema`, `output_schemas` (`{ [branch]: z.ZodObject }`), plus optional `requires_schema` (`context`) and `options_schema` (`options`).
 2. **Default-Exported `exec` Function**: Exporting as `export default` allows the same file to act as a Piscina worker entrypoint.
 3. **In-Process Operator Class**: Extends `Operator` with `exec = <fn>`.
-4. **Worker-Thread Operator Class *(optional)***: Extends `Operator` with `exec = import.meta.filename`. When a `Piscina` pool is passed to `dag.run(...)`, the framework executes this file's `export default` function in a worker thread (ensure `inputs`, `requires`, and `options` are structured-cloneable).
+4. **Worker-Thread Operator Class *(optional)***: Extends `Operator` with `exec = import.meta.filename`. When a `Piscina` pool is passed to `dag.run(...)`, the framework executes this file's `export default` function in a worker thread.
 
 ```ts
 import * as z from "zod";
@@ -87,8 +90,8 @@ export class FormatReportOperatorThread extends Operator {
 }
 ```
 
-> [!IMPORTANT]
-> Keep schema keys local to the operator (e.g. `items`, `report`). Never hardcode pipeline-specific task names inside `*.operator.ts`—remap them in `*.dag.ts` instead.
+> [!NOTE]
+> **Worker Thread Limitation**: Arguments crossing into and out of a worker-thread operator (`inputs`, `requires`, `options`, and `output`) are transferred via Node.js structured cloning (`postMessage`). Only serializable data (primitives, plain objects, arrays, `Map`/`Set`, `Date`, `Uint8Array`, etc.) can be passed—non-serializable values such as database connections, SDK clients, functions, or class instances with methods cannot be passed to a worker-thread operator.
 
 ---
 
