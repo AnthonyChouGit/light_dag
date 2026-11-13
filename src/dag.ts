@@ -1,5 +1,20 @@
 import { type Piscina } from "piscina";
-import { type Operator, type OperatorArgs, type OperatorOutput, OperatorArgsSchema, OperatorOutputSchema } from "./operator.js";
+import { type Operator, type OperatorArgs, OperatorOutputSchema } from "./operator.js";
+
+/** Error thrown when a DAG operator node fails, preserving the root failing node name and cause. */
+export class DagNodeError extends Error {
+    constructor(
+        public readonly node_name: string,
+        public override readonly cause: unknown
+    ) {
+        const msg = cause instanceof Error ? cause.message : String(cause);
+        super(`[LightDag] Node "${node_name}" failed: ${msg}`);
+        this.name = "DagNodeError";
+    }
+}
+
+/** Optional hook invoked when run() fails with a DagNodeError (e.g. for centralized alerting). */
+export type ErrorHandlerHook = (error: DagNodeError) => Promise<void> | void;
 
 /**
  * A lightweight DAG executor that wires Operators together via named promises.
@@ -14,10 +29,12 @@ export class LightDag {
     private readonly task_names: Set<string>;
     private debug: boolean;
     private timeout?: number | undefined;
+    private error_handler?: ErrorHandlerHook | undefined;
 
-    constructor(operators: Operator[], debug?: boolean, timeout?: number) {
+    constructor(operators: Operator[], debug?: boolean, timeout?: number, error_handler?: ErrorHandlerHook) {
         this.debug = debug ?? false;
         this.timeout = timeout;
+        this.error_handler = error_handler;
         this.operators = new Map<string, Operator>();
         this.task_names = new Set<string>();
         // Discover all global task names by scanning each operator's schemas
@@ -42,9 +59,78 @@ export class LightDag {
         this.timeout = timeout;
     }
 
+    public setOnError(handler: ErrorHandlerHook): void {
+        this.error_handler = handler;
+    }
+
     private log(...args: unknown[]): void {
         if (this.debug)
             console.log("[LightDag]", ...args);
+    }
+
+    /**
+     * Validate DAG wiring and detect dependency cycles (invoked when debug is enabled).
+     * Checks for: input/output collisions, duplicate producers, dangling tasks, and cycles.
+     */
+    private validateGraph(inputs: Record<string, unknown>, outputs: string[]): void {
+        const consumed = new Set<string>();
+        const producer_of = new Map<string, string>();
+        const provided_inputs = new Set(Object.keys(inputs));
+        const requested_outputs = new Set(outputs);
+
+        for (const op of this.operators.values()) {
+            for (const name of Object.keys(op.input_schema.shape))
+                consumed.add(op.input_map?.[name] ?? name);
+
+            // Deduplicate across branches so a single operator producing the same
+            // task on multiple branches isn't flagged as a duplicate producer.
+            const op_outputs = new Set<string>();
+            for (const branchSchema of Object.values(op.output_schemas))
+                for (const name of Object.keys(branchSchema.shape))
+                    op_outputs.add(op.output_map?.[name] ?? name);
+
+            for (const name of op_outputs) {
+                if (provided_inputs.has(name))
+                    console.warn(`[LightDag] Warning: task "${name}" is both provided as input and produced by operator "${op.name}"`);
+                if (producer_of.has(name))
+                    console.warn(`[LightDag] Warning: task "${name}" is produced by multiple operators ("${producer_of.get(name)}" and "${op.name}")`);
+                producer_of.set(name, op.name);
+            }
+        }
+
+        for (const name of producer_of.keys()) {
+            if (!consumed.has(name) && !requested_outputs.has(name))
+                console.warn(`[LightDag] Warning: task "${name}" is produced but never consumed by any operator or requested as output`);
+        }
+        for (const name of consumed) {
+            if (!producer_of.has(name) && !provided_inputs.has(name))
+                console.warn(`[LightDag] Warning: task "${name}" is consumed but never produced by any operator or provided as input`);
+        }
+        for (const name of provided_inputs) {
+            if (!consumed.has(name) && !requested_outputs.has(name))
+                console.warn(`[LightDag] Warning: input "${name}" is provided but never consumed by any operator or requested as output`);
+        }
+
+        // Cycle detection via 3-state DFS (1 = visiting on current path, 2 = fully explored).
+        // Walking upstream from each operator's inputs via producer_of detects any directed cycle.
+        const state = new Map<string, 1 | 2>();
+        const visit = (op_name: string): void => {
+            const s = state.get(op_name);
+            if (s === 1)
+                throw new Error(`[LightDag] Cycle detected involving operator "${op_name}"`);
+            if (s === 2)
+                return;
+            state.set(op_name, 1);
+            const op = this.operators.get(op_name)!;
+            for (const name of Object.keys(op.input_schema.shape)) {
+                const upstream = producer_of.get(op.input_map?.[name] ?? name);
+                if (upstream)
+                    visit(upstream);
+            }
+            state.set(op_name, 2);
+        };
+        for (const op_name of this.operators.keys())
+            visit(op_name);
     }
 
     /**
@@ -62,29 +148,9 @@ export class LightDag {
         options?: Record<string, unknown>,
         pool?: Piscina
     ) {
-        // Debug-only: warn about tasks that are produced but never consumed, or
-        // consumed but never produced (likely a wiring mistake).
-        if (this.debug) {
-            const consumed = new Set<string>();
-            const produced = new Set<string>();
-            for (const op of this.operators.values()) {
-                for (const name of Object.keys(op.input_schema.shape))
-                    consumed.add(op.input_map?.[name] ?? name);
-                for (const branchSchema of Object.values(op.output_schemas))
-                    for (const name of Object.keys(branchSchema.shape))
-                        produced.add(op.output_map?.[name] ?? name);
-            }
-            const provided_inputs = new Set(Object.keys(inputs));
-            const requested_outputs = new Set(outputs);
-            for (const name of produced) {
-                if (!consumed.has(name) && !requested_outputs.has(name))
-                    console.warn(`[LightDag] Warning: task "${name}" is produced but never consumed by any operator or requested as output`);
-            }
-            for (const name of consumed) {
-                if (!produced.has(name) && !provided_inputs.has(name))
-                    console.warn(`[LightDag] Warning: task "${name}" is consumed but never produced by any operator or provided as input`);
-            }
-        }
+        if (this.debug)
+            this.validateGraph(inputs, outputs);
+
         // Create a promise + resolve/reject pair for every global task name.
         // Operators await input promises and resolve output promises when done.
         const tasks = new Map<string, Promise<unknown>>();
@@ -96,17 +162,22 @@ export class LightDag {
             resolves.set(task, { resolve, reject });
         }
         this.log("run() started");
+        // Track only operators currently inside exec() so finally can drain them cleanly
+        // without waiting on unchosen conditional branches suspended at await inputs.
+        const active_executions = new Set<Promise<unknown>>();
+        const abort_controller = new AbortController();
         let timeout_id: NodeJS.Timeout | undefined;
         if (this.timeout)
             timeout_id = setTimeout(() => {
                 const err = new Error(`[LightDag] Error: Execution timeout: ${this.timeout}ms`);
+                abort_controller.abort(err);
                 for (const { reject } of resolves.values())
                     reject(err);
             }, this.timeout);
         try {
             // Kick off all operators concurrently — they'll block on their input promises.
             for (const op_name of this.operators.keys())
-                this.runNode(op_name, tasks, resolves, context, options, pool);
+                this.runNode(op_name, tasks, resolves, active_executions, abort_controller, context, options, pool);
             // Resolve the initial input tasks to unblock the first wave of operators.
             for (const [input_name, input_value] of Object.entries(inputs)) {
                 const entry = resolves.get(input_name);
@@ -129,9 +200,19 @@ export class LightDag {
             }
             this.log("run() completed");
             return output_values;
+        } catch (err) {
+            // Broadcast cancellation to in-flight operators before running error handler.
+            abort_controller.abort(err);
+            if (this.error_handler && err instanceof DagNodeError)
+                await this.error_handler(err);
+            throw err;
         } finally {
             if (timeout_id)
                 clearTimeout(timeout_id);
+            // Drain all in-flight exec() calls before returning so outer cleanup (e.g.
+            // closing DB connections or worker pools) never races with active operators.
+            if (active_executions.size > 0)
+                await Promise.allSettled(active_executions);
         }
     }
 
@@ -149,6 +230,8 @@ export class LightDag {
         name: string,
         tasks: Map<string, Promise<unknown>>,
         resolves: Map<string, { resolve: (value: unknown) => void, reject: (reason: unknown) => void }>,
+        active_executions: Set<Promise<unknown>>,
+        abort_controller: AbortController,
         context?: Record<string, unknown>,
         options?: Record<string, unknown>,
         pool?: Piscina
@@ -193,6 +276,10 @@ export class LightDag {
                     return task;
                 })
             );
+            // Skip launching exec() if the DAG was already aborted while awaiting inputs.
+            if (abort_controller.signal.aborted)
+                return;
+
             const inputs: Record<string, unknown> = {};
             for (let i = 0; i < schema_input_names.length; i++) {
                 inputs[schema_input_names[i]!] = input_results[i];
@@ -200,17 +287,32 @@ export class LightDag {
             this.log(`[${name}] START — inputs resolved: [${global_input_names.join(", ")}]`);
             const parsed_inputs = op.input_schema.parse(inputs);
 
+            if (typeof op.exec === "string" && !pool)
+                throw new Error(`Worker pool not initialized for node ${name}`);
 
-            let op_output: OperatorOutput;
-            const op_input_arg: OperatorArgs = { inputs: parsed_inputs, requires: parsed_requires, options: parsed_options };
-            if (typeof op.exec === "string") {
-                if (!pool)
-                    throw new Error(`Worker pool not initialized for node ${name}`);
-                op_output = await pool.run(op_input_arg, { filename: op.exec });
-            } else {
-                op_output = await op.exec(op_input_arg);
+            const op_input_arg: OperatorArgs = {
+                inputs: parsed_inputs,
+                requires: parsed_requires,
+                options: parsed_options,
+                signal: abort_controller.signal
+            };
+            // Worker threads cannot structured-clone AbortSignal in the payload; pass it via Piscina RunOptions instead.
+            const exec_promise = typeof op.exec === "string"
+                ? pool!.run(
+                    { inputs: parsed_inputs, requires: parsed_requires, options: parsed_options },
+                    { filename: op.exec, signal: abort_controller.signal }
+                )
+                : op.exec(op_input_arg);
+
+            active_executions.add(exec_promise);
+            let raw_output: unknown;
+            try {
+                raw_output = await exec_promise;
+            } finally {
+                active_executions.delete(exec_promise);
             }
-            op_output = OperatorOutputSchema.parse(op_output);
+
+            const op_output = OperatorOutputSchema.parse(raw_output);
             if (!Object.hasOwn(op.output_schemas, op_output.branch))
                 throw new Error(`Branch "${op_output.branch}" not found for node "${name}"`);
 
@@ -229,11 +331,12 @@ export class LightDag {
             }
             this.log(`[${name}] END — outputs produced: [${global_output_names.join(", ")}] (branch: ${op_output.branch})`);
         } catch (err) {
-            // On failure, reject all of this operator's output promises so
-            // downstream operators don't hang indefinitely.
-            this.log(`[${name}] END — error, rejecting outputs: [${all_global_output_names.join(", ")}]`, err);
+            // On failure, wrap in DagNodeError (preserving root node name) and
+            // reject all output promises so downstream operators don't hang.
+            const dag_err = err instanceof DagNodeError ? err : new DagNodeError(name, err);
+            this.log(`[${name}] END — error, rejecting outputs: [${all_global_output_names.join(", ")}]`, dag_err);
             for (const global_name of all_global_output_names) {
-                resolves.get(global_name)?.reject(err);
+                resolves.get(global_name)?.reject(dag_err);
             }
         }
     }

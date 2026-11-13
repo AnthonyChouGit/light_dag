@@ -1,4 +1,4 @@
-export { LightDag } from "./dag.js";
+export { LightDag, DagNodeError, type ErrorHandlerHook } from "./dag.js";
 export {
     Operator,
     OperatorArgsSchema,

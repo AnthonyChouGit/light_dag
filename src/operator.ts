@@ -4,14 +4,16 @@ import { z } from "zod";
 export const OperatorArgsSchema = z.object({
     inputs: z.record(z.string(), z.unknown()).default({}),
     requires: z.record(z.string(), z.unknown()).default({}),
-    options: z.record(z.string(), z.unknown()).default({})
+    options: z.record(z.string(), z.unknown()).default({}),
+    /** Framework-injected cancellation signal; aborted when the DAG times out or another node fails. */
+    signal: z.instanceof(AbortSignal).optional()
 });
 export type OperatorArgs = z.infer<typeof OperatorArgsSchema>;
 
 /** Schema for the value returned by an operator's exec function. */
 export const OperatorOutputSchema = z.object({
     /** Which output branch was taken (selects the schema from output_schemas). */
-    branch: z.string().nonempty(),
+    branch: z.string().nonempty().default("default"),
     output: z.record(z.string(), z.unknown())
 });
 export type OperatorOutput = z.infer<typeof OperatorOutputSchema>;
@@ -54,7 +56,7 @@ export abstract class Operator {
         | string;
 
     /** Alias a schema input name to a different global DAG task name. Chainable. */
-    public mapInput(schema_name: string, global_name: string): Operator {
+    public mapInput(schema_name: string, global_name: string): this {
         if (!Object.hasOwn(this.input_schema.shape, schema_name))
             throw new Error(`Schema input name ${schema_name} does not exist in operator ${this.name}`);
         if (!this.input_map)
@@ -64,7 +66,7 @@ export abstract class Operator {
     }
 
     /** Alias a schema output name to a different global DAG task name. Chainable. */
-    public mapOutput(schema_name: string, global_name: string): Operator {
+    public mapOutput(schema_name: string, global_name: string): this {
         const exists = Object.values(this.output_schemas).some(
             (schema) => Object.hasOwn(schema.shape, schema_name)
         );
@@ -77,7 +79,7 @@ export abstract class Operator {
     }
 
     /** Alias a schema requires name to a different global context key. Chainable. */
-    public mapRequires(schema_name: string, global_name: string): Operator {
+    public mapRequires(schema_name: string, global_name: string): this {
         if (!Object.hasOwn(this.requires_schema.shape, schema_name))
             throw new Error(`Schema requires name ${schema_name} does not exist in operator ${this.name}`);
         if (!this.requires_map)
@@ -87,7 +89,7 @@ export abstract class Operator {
     }
 
     /** Alias a schema options name to a different global options key. Chainable. */
-    public mapOptions(schema_name: string, global_name: string): Operator {
+    public mapOptions(schema_name: string, global_name: string): this {
         if (!Object.hasOwn(this.options_schema.shape, schema_name))
             throw new Error(`Schema options name ${schema_name} does not exist in operator ${this.name}`);
         if (!this.options_map)
@@ -109,7 +111,7 @@ export abstract class Operator {
             this.options_map = options_map;
     }
 
-    public setName(name: string): Operator {
+    public setName(name: string): this {
         this.name = name;
         return this;
     }
