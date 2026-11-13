@@ -22,9 +22,7 @@ src/
 ├── operators/
 │   ├── fetchItems.operator.ts       # Single-file operator (schemas + exec + class)
 │   ├── truncateItems.operator.ts    # Reusable operator instantiated multiple times
-│   ├── formatReport.operator.ts     # Exports both main-thread & worker-thread classes
-│   └── workers/
-│       └── _parse.ts                # Optional helper script for per-item worker tasks
+│   └── formatReport.operator.ts     # Optional main-thread & worker-thread classes
 ├── pipeline.dag.ts                  # Instantiates operators, maps keys, exports LightDag
 └── run.ts                           # Configures hooks, runs the DAG, cleans up resources
 ```
@@ -33,19 +31,12 @@ src/
 
 ## 1. Defining an Operator (`*.operator.ts`)
 
-Each `*.operator.ts` file is self-contained and follows a 4-part layout:
+Each `*.operator.ts` file is self-contained:
 
-1. **Zod Schemas & Types**:
-   - `input_schema` — upstream task outputs required by this operator.
-   - `output_schemas` — a map of `{ [branch]: z.ZodObject }` defining the output shape of each branch (typically `{ default: ... }`).
-   - `requires_schema` *(optional)* — shared runtime clients (DB repositories, SDK clients, Piscina pool) pulled from `context`.
-   - `options_schema` *(optional)* — runtime parameters pulled from `options`.
-2. **Default-Exported `exec` Function**:
-   - Exporting `exec` as `export default` lets the same file serve as a Piscina worker entrypoint when `exec = import.meta.filename`.
-3. **In-Process Operator Class**:
-   - Extends `Operator` with `exec = <fn>`.
-4. **Worker-Thread Operator Class *(optional)***:
-   - Extends `Operator` with `exec = import.meta.filename`.
+1. **Zod Schemas & Types**: `input_schema`, `output_schemas` (`{ [branch]: z.ZodObject }`), plus optional `requires_schema` (`context`) and `options_schema` (`options`).
+2. **Default-Exported `exec` Function**: Exporting as `export default` allows the same file to act as a Piscina worker entrypoint.
+3. **In-Process Operator Class**: Extends `Operator` with `exec = <fn>`.
+4. **Worker-Thread Operator Class *(optional)***: Extends `Operator` with `exec = import.meta.filename`. When a `Piscina` pool is passed to `dag.run(...)`, the framework executes this file's `export default` function in a worker thread (ensure `inputs`, `requires`, and `options` are structured-cloneable).
 
 ```ts
 import * as z from "zod";
@@ -103,74 +94,24 @@ export class FormatReportOperatorThread extends Operator {
 
 ## 2. Implementing `exec`
 
-### 2.1 Contract & Error Handling
-
 ```ts
 export default async function myExec(
     { inputs, requires, options, signal }: OperatorArgs
 ): Promise<OperatorOutput> {
-    // 1. Cast validated inputs / requires / options
-    // 2. Perform work (throw directly on failure)
-    // 3. Return the selected branch and its output object
+    const res = await fetch(url, { signal }); // pass signal to cancel in-flight I/O on abort
+
+    for (const item of items) {
+        signal?.throwIfAborted();             // or check signal inside loops
+        await processItem(item);
+    }
+
     return { branch: "default", output: { ... } };
 }
 ```
 
-- **Return Value**: `{ branch, output }`. `branch` selects which schema in `output_schemas` validates `output` and which downstream branch wakes up.
-- **Error Handling**: **Do not** wrap `exec` in `try/catch` to return an `"error"` branch or wrap exceptions manually. Any exception thrown inside `exec` (database errors, HTTP failures, SDK rejections) is automatically caught by `LightDag` and routed to `setOnError(err, node_name)`—or logged by the framework's built-in fallback if `setOnError` is not configured.
-
----
-
-### 2.2 Concurrency Models
-
-Concurrency in `LightDAG` works at **two levels**:
-
-1. **Between operators (automatic)**: Every operator starts immediately once all of its input promises resolve. Independent branches run concurrently without extra configuration.
-2. **Inside a single operator's `exec` (your choice)**: Because Node.js runs JavaScript on a single event-loop thread, choose the pattern below based on whether `exec` is **I/O-bound** or **CPU-bound**:
-
-<p align="center">
-  <img src="docs/concurrency.svg" alt="Concurrency in LightDAG" width="100%" />
-</p>
-
-| Pattern | Where It Runs | When to Use | How to Write It |
-| :--- | :--- | :--- | :--- |
-| **1. Async I/O** (`Promise.all` / `Promise.allSettled`) | Main event loop (single thread, overlapping I/O wait) | Database queries, HTTP API calls, LLM requests | Fire promises concurrently inside `exec` (`Promise.all` for all-or-nothing; `Promise.allSettled` to tolerate partial failures) |
-| **2. Worker Operator** (`exec = import.meta.filename`) | Piscina OS worker thread | The **entire operator** is CPU-heavy (e.g. large Markdown/JSON rendering) and needs no uncloneable `requires` | Define a `*Thread` class with `exec = import.meta.filename` and pass `pool` to `dag.run(...)` |
-| **3. Sub-Task Fan-Out** (`thread_pool.run()`) | Main `exec` coordinates; sub-tasks run across Piscina worker threads | One operator processes **many categories/articles in parallel** with CPU-heavy parsing + HTTP fetching | Inject `thread_pool: z.instanceof(Piscina)` via `requires_schema` and fan out with `Promise.allSettled(items.map(x => thread_pool.run(x, { filename, signal })))` |
-
-```ts
-// Pattern 1: Concurrent I/O on the event loop (DB / LLM / HTTP)
-const results = await Promise.all(categories.map(cat => repo.findRecent(cat)));
-
-// Pattern 3: Fan out CPU-heavy per-category tasks to Piscina worker threads
-const tasks = categories.map(category =>
-    thread_pool.run(
-        { category, options },
-        { filename: new URL("./workers/_fetch.js", import.meta.url).href, signal }
-    )
-);
-const settled = await Promise.allSettled(tasks);
-```
-
----
-
-### 2.3 Cooperative Cancellation (`signal`)
-
-`signal?: AbortSignal` is automatically injected into `OperatorArgs` and aborts whenever `dag.run()` times out or any concurrent operator throws. Use it to stop work early:
-
-```ts
-// A. Pass directly to signal-aware APIs (fetch, Axios, OpenAI SDK, Piscina pool.run)
-const res = await fetch(url, { signal });
-
-// B. Check before each step in a loop
-for (const item of items) {
-    signal?.throwIfAborted();
-    await processItem(item);
-}
-
-// C. Clean up custom timers or streams on abort
-signal?.addEventListener("abort", () => clearTimeout(timer), { once: true });
-```
+- **Return Contract**: `{ branch, output }`. `branch` picks the matching schema in `output_schemas` to validate `output` and unblocks only that branch's downstream tasks.
+- **Error Handling**: Throw errors directly inside `exec` (no need to catch or wrap them). Any uncaught exception is caught by `LightDag` and routed to `setOnError(err, node_name)`—or logged via the framework fallback.
+- **Cooperative Cancellation (`signal`)**: `signal?: AbortSignal` is injected automatically and aborts on timeout or when another operator fails. Pass it to signal-aware APIs (`fetch`, SDKs, `pool.run`), call `signal?.throwIfAborted()`, or attach a cleanup listener with `signal?.addEventListener("abort", ...)`.
 
 ---
 
